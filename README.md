@@ -46,7 +46,12 @@ There are three separate programs running on the same machine:
 
 ## Deploy it
 
-Follow **[DEPLOY.md](DEPLOY.md)**. It walks you through creating one server on AWS, Azure, or Google Cloud, installing the app with one script, and checking that everything works. Short version, once you're on a fresh Ubuntu 24.04 server:
+Two guides, in order:
+
+1. **[DEPLOY.md](DEPLOY.md)**: run the whole app on one server on AWS, Azure, or Google Cloud
+2. **[SCALE.md](SCALE.md)**: add a second server and a load balancer in front
+
+Short version, on a fresh Ubuntu 24.04 server:
 
 ```bash
 sudo git clone https://github.com/DeveloperMastery/stagepass.git /opt/stagepass
@@ -57,51 +62,6 @@ Then open `http://<your-server-ip>` and log in with a demo account:
 
 - Customer: `customer@stagepass.dev` / `customer123`
 - Organizer: `organizer@stagepass.dev` / `organizer123`
-
----
-
-## Look around the server
-
-Every part of the app is a normal Linux process you can inspect.
-
-```bash
-# The three programs and their status
-systemctl status nginx
-systemctl status stagepass-api
-systemctl status postgresql
-
-# Which ports are open, and who's listening.
-# Only port 80 is on 0.0.0.0 (all addresses). 3000 and 5432 are on 127.0.0.1.
-sudo ss -ltnp
-
-# API logs, live. Click around the site and watch requests come in
-sudo journalctl -u stagepass-api -f
-
-# Nginx access log
-sudo tail -f /var/log/nginx/access.log
-
-# Memory and CPU used by each program
-free -h
-top
-
-# Health check: the API is up and can reach the database
-curl http://localhost/api/health
-```
-
-Connect to the database and look at the data:
-
-```bash
-sudo -u postgres psql stagepass
-```
-
-```sql
-\dt                                    -- list tables
-\d seats                               -- columns, indexes, and constraints of a table
-SELECT id, title, starts_at FROM events;
-SELECT status, COUNT(*) FROM seats GROUP BY status;
-SELECT id, user_id, status, total_cents, hold_expires_at FROM bookings ORDER BY id DESC LIMIT 10;
-\q
-```
 
 ---
 
@@ -151,22 +111,7 @@ sudo systemctl restart stagepass-api
 
 ## Run it on more than one server
 
-Extra servers behind a load balancer don't get their own database. They use the first server's database over the cloud's private network, and the same login secret, so it doesn't matter which server answers a request.
-
-On the first server:
-
-```bash
-sudo /opt/stagepass/deploy/share-database.sh
-```
-
-It lets Postgres accept connections from private network addresses (password required, public addresses still rejected) and prints one command. On each new server, clone the repo and run that command:
-
-```bash
-sudo git clone https://github.com/DeveloperMastery/stagepass.git /opt/stagepass
-sudo /opt/stagepass/deploy/setup.sh --database-url '<printed url>' --jwt-secret '<printed secret>'
-```
-
-Point the load balancer's health check at `/api/health` on port 80. It answers only when the API is up and can reach the database, and it includes the server's hostname, which the site also shows at the bottom of every page as "Served by". On AWS, also allow PostgreSQL (5432) inside the servers' security group.
+See [SCALE.md](SCALE.md). Extra servers don't get their own database: `deploy/share-database.sh` on the first server prints the `setup.sh --database-url ... --jwt-secret ...` command to run on each new one.
 
 ## Update after changes
 
