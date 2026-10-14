@@ -1,5 +1,6 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { hostname } from 'node:os';
 import { loadUser } from './auth.js';
 import { pool } from './db.js';
 import { errorHandler } from './errors.js';
@@ -29,12 +30,14 @@ export function createApp() {
   });
 
   // Used to check the server is up and can reach the database.
+  // Load balancers call this to decide which servers get traffic.
+  // "server" says which machine answered, so you can see the load balancer at work.
   app.get('/api/health', async (_req, res) => {
     try {
       await pool.query('SELECT 1');
-      res.json({ status: 'ok' });
+      res.json({ status: 'ok', server: hostname() });
     } catch {
-      res.status(503).json({ status: 'database unavailable' });
+      res.status(503).json({ status: 'database unavailable', server: hostname() });
     }
   });
 

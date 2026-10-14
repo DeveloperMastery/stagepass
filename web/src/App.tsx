@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { api } from './api'
 import { useAuth } from './auth'
 import Checkout from './pages/Checkout'
 import EventPage from './pages/EventPage'
@@ -54,6 +55,26 @@ function Header() {
   )
 }
 
+// Shows which server answered. Behind a load balancer this changes as you click around.
+function Footer() {
+  const { pathname } = useLocation()
+  const [server, setServer] = useState('')
+
+  useEffect(() => {
+    api
+      .health()
+      .then((res) => setServer(res.server))
+      .catch(() => setServer(''))
+  }, [pathname])
+
+  if (!server) return null
+  return (
+    <footer className="site-footer">
+      Served by <code>{server}</code>
+    </footer>
+  )
+}
+
 export default function App() {
   return (
     <>
@@ -99,6 +120,7 @@ export default function App() {
           <Route path="*" element={<p className="empty">This page doesn't exist. <Link to="/">See all events</Link></p>} />
         </Routes>
       </main>
+      <Footer />
     </>
   )
 }

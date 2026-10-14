@@ -4,6 +4,11 @@
 #   sudo git clone https://github.com/DeveloperMastery/stagepass.git /opt/stagepass
 #   sudo /opt/stagepass/deploy/setup.sh
 #
+# Extra servers behind a load balancer don't get their own database. They use
+# the first server's database instead (deploy/share-database.sh prints this):
+#
+#   sudo /opt/stagepass/deploy/setup.sh --database-url '<url>' --jwt-secret '<secret>'
+#
 # Safe to run again. After a `git pull`, run it again to deploy the new code.
 
 set -euo pipefail
@@ -18,6 +23,28 @@ step() { echo -e "\n\033[1;33m==> $1\033[0m"; }
 if [[ $EUID -ne 0 ]]; then
   echo "Run this script with sudo: sudo $0"
   exit 1
+fi
+
+# Optional: use a database on another server instead of installing one here
+REMOTE_DB_URL=""
+REMOTE_JWT_SECRET=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --database-url) REMOTE_DB_URL="$2"; shift 2 ;;
+    --jwt-secret) REMOTE_JWT_SECRET="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+if [[ -n $REMOTE_DB_URL && -z $REMOTE_JWT_SECRET ]] || [[ -z $REMOTE_DB_URL && -n $REMOTE_JWT_SECRET ]]; then
+  echo "Pass both --database-url and --jwt-secret, or neither."
+  exit 1
+fi
+
+# This server runs its own database unless it was set up with --database-url
+# (now, or on an earlier run).
+APP_ONLY=false
+if [[ -n $REMOTE_DB_URL ]] || { [[ -f $ENV_FILE ]] && ! grep -q '@localhost:' "$ENV_FILE"; }; then
+  APP_ONLY=true
 fi
 
 # 1. Swap. The free-tier servers have 1 GB of RAM, and installing npm packages
@@ -37,10 +64,15 @@ else
 fi
 
 # 2. System packages
-step "Installing Nginx and PostgreSQL"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq nginx postgresql curl ca-certificates openssl >/dev/null
+if [[ $APP_ONLY == true ]]; then
+  step "Installing Nginx (the database lives on another server)"
+  apt-get install -y -qq nginx curl ca-certificates openssl >/dev/null
+else
+  step "Installing Nginx and PostgreSQL"
+  apt-get install -y -qq nginx postgresql curl ca-certificates openssl >/dev/null
+fi
 
 # 3. Node.js 22. Ubuntu's own package is too old, so we use NodeSource.
 step "Installing Node.js"
@@ -56,6 +88,24 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --no-create-home --she
 
 # 5. Database and config. Postgres only listens on localhost by default,
 #    so the database can't be reached from the internet.
+if [[ $APP_ONLY == true ]]; then
+  step "Using the database on another server"
+  if [[ -n $REMOTE_DB_URL ]]; then
+    mkdir -p "$(dirname "$ENV_FILE")"
+    cat > "$ENV_FILE" <<ENV
+DATABASE_URL=${REMOTE_DB_URL}
+JWT_SECRET=${REMOTE_JWT_SECRET}
+PORT=3000
+HOLD_MINUTES=10
+BOOKING_MODE=safe
+ENV
+    chown root:"$SERVICE_USER" "$ENV_FILE"
+    chmod 640 "$ENV_FILE"
+    echo "Wrote $ENV_FILE"
+  else
+    echo "$ENV_FILE already exists, keeping it"
+  fi
+else
 step "Setting up the database"
 systemctl enable --now postgresql >/dev/null
 if [[ ! -f $ENV_FILE ]]; then
@@ -88,6 +138,7 @@ ENV
 else
   echo "$ENV_FILE already exists, keeping it"
 fi
+fi
 
 # 6. Build the API and update the database schema
 step "Building the API"
@@ -98,6 +149,11 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+if ! node -e "const c=new (require('pg').Client)(process.env.DATABASE_URL);c.connect().then(()=>c.end()).catch(e=>{console.error(e.message);process.exit(1)})"; then
+  echo "Can't connect to the database. If it's on another server, check that share-database.sh"
+  echo "ran there and that the firewall allows port 5432 between the two servers."
+  exit 1
+fi
 npm run migrate --silent
 npm run seed --silent
 
@@ -113,6 +169,10 @@ cp -r dist/* "$WEB_ROOT"/
 # 8. Run the API as a service
 step "Starting the API"
 sed "s#__APP_DIR__#$APP_DIR#g" "$APP_DIR/deploy/stagepass-api.service" > /etc/systemd/system/stagepass-api.service
+if [[ $APP_ONLY == true ]]; then
+  # No local Postgres to wait for
+  sed -i 's/ postgresql.service//; /^Requires=postgresql.service$/d' /etc/systemd/system/stagepass-api.service
+fi
 systemctl daemon-reload
 systemctl enable stagepass-api >/dev/null 2>&1
 systemctl restart stagepass-api

@@ -40,7 +40,7 @@ There are three separate programs running on the same machine:
 | `api/` | Node.js API (Express, TypeScript, `pg`) |
 | `api/migrations/` | The database schema, as SQL |
 | `api/src/bookings.ts` | The booking logic: holds, payment, expiry. The most interesting file |
-| `deploy/` | Nginx config, systemd service, and `setup.sh` that installs everything |
+| `deploy/` | Nginx config, systemd service, `setup.sh` that installs everything, and `share-database.sh` for running on more than one server |
 
 ---
 
@@ -148,6 +148,25 @@ sudo systemctl restart stagepass-api
 ```
 
 ---
+
+## Run it on more than one server
+
+Extra servers behind a load balancer don't get their own database. They use the first server's database over the cloud's private network, and the same login secret, so it doesn't matter which server answers a request.
+
+On the first server:
+
+```bash
+sudo /opt/stagepass/deploy/share-database.sh
+```
+
+It lets Postgres accept connections from private network addresses (password required, public addresses still rejected) and prints one command. On each new server, clone the repo and run that command:
+
+```bash
+sudo git clone https://github.com/DeveloperMastery/stagepass.git /opt/stagepass
+sudo /opt/stagepass/deploy/setup.sh --database-url '<printed url>' --jwt-secret '<printed secret>'
+```
+
+Point the load balancer's health check at `/api/health` on port 80. It answers only when the API is up and can reach the database, and it includes the server's hostname, which the site also shows at the bottom of every page as "Served by". On AWS, also allow PostgreSQL (5432) inside the servers' security group.
 
 ## Update after changes
 

@@ -76,6 +76,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 }
 
 export const api = {
+  health: () => request<{ status: string; server: string }>('/health'),
   me: () => request<{ user: User }>('/auth/me'),
   login: (email: string, password: string) =>
     request<{ user: User }>('/auth/login', { method: 'POST', body: { email, password } }),

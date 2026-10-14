@@ -730,6 +730,25 @@ p {
   background: var(--cobalt);
 }
 
+/* Footer */
+
+.site-footer {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 32px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.site-footer code {
+  font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  color: var(--ink);
+}
+
 /* Small screens */
 
 @media (max-width: 820px) {
