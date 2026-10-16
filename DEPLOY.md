@@ -89,9 +89,9 @@ Follow the part for your cloud, then go to Step 2. Whichever cloud you use, you 
 4. **Application and OS Images:** Ubuntu, then **Ubuntu Server 24.04 LTS**.
 5. **Instance type:** `t3.micro` (marked "Free tier eligible").
 6. **Key pair:** click **Create new key pair**, name it `stagepass`, type RSA, format `.pem`. The file downloads once. Keep it, you can't download it again.
-7. **Network settings:** check **Allow SSH traffic** and **Allow HTTP traffic from the internet**. This creates the security group.
+7. **Network settings:** check **Allow SSH traffic** and **Allow HTTP traffic from the internet**. Leave SSH set to **Anywhere**. This creates one security group and attaches it to the instance. That attached group is the only firewall that counts. A second group, even one named `stagepass`, does nothing until you attach it on the instance's **Security** tab.
 8. Leave storage as it is and click **Launch instance**.
-9. Open the instance and copy its **Public IPv4 address**.
+9. Open the instance and copy its **Public IPv4 address**. On the **Security** tab, click the listed group (usually `launch-wizard-1`) and confirm its inbound rules include SSH (TCP 22) and HTTP (TCP 80).
 
 ### Azure: Virtual Machines
 
@@ -240,8 +240,9 @@ You should see exactly 1 request succeed and 49 get rejected. The [README](READM
 
 | What you see | What to do |
 | --- | --- |
-| The browser spins and times out | Port 80 isn't open. AWS: add an HTTP rule to the security group. Azure: add an inbound rule for port 80 to the network security group. Google Cloud: edit the VM and check **Allow HTTP traffic**. |
-| `ssh: connect to host ... timed out` | Port 22 isn't open, or the IP is wrong. Check the IP in the console. |
+| The browser spins and times out | Port 80 isn't open. AWS: add an HTTP rule to the security group listed on the instance's **Security** tab. Azure: add an inbound rule for port 80 to the network security group. Google Cloud: edit the VM and check **Allow HTTP traffic**. |
+| The browser says the public IP "refused to connect" | Expected before Step 3. The server is reachable, and nothing is serving the site yet. |
+| `ssh: connect to host ... timed out` | SSH never reached the server, so the key is not the problem. Open the instance's **Security** tab and click the group listed there. Its inbound rules must include SSH, TCP 22. A rule on any other group does not apply. Also use the **Public IPv4** address in the `ssh` command. |
 | `Permission denied (publickey)` | Wrong user or wrong key. AWS uses `ubuntu`, Azure uses the username you set. Check the path after `-i`. |
 | `502 Bad Gateway` | Nginx is running but the API isn't. Run `sudo journalctl -u stagepass-api -n 50` to see why. |
 | `npm` prints `Killed` during setup | The server ran out of memory. Check swap is on with `free -h`, then run `setup.sh` again. |
